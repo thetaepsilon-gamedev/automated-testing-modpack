@@ -57,5 +57,66 @@ i.fill_area_chunks = fill_area_chunks
 
 
 
+-- whereas this version does an exact area.
+-- due to the whole chunk restriction,
+-- modifying parts of them is a read-modify-write operation.
+-- returns the cuboid of the modified region as a minp/maxp pair, and updated volume.
+local inrange = function(lower, x, upper)
+	return (lower <= x) and (x <= upper)
+end
+local fill_area_exact = function(pos1, pos2, nodename, param2v)
+	param2v = param2v or 0
+	local cid = get_content_id(nodename, "unable to determine content id: ")
+	local vm = VoxelManip(pos1, pos2)
+	local minpa, maxpa = vm:get_emerged_area()
+
+	-- determine the xyz bounds of the actual region.
+	local dima = vector.subtract(maxpa, minpa)
+	-- don't subtract one as the for-loop bounds below are inclusive anyway,
+	-- and we start the x/y/z at zero to match the index position in the flattened 3d array.
+	local xa = (dima.x)
+	local ya = (dima.y)
+	local za = (dima.z)
+
+	-- the target region is always a subset of the rounded-up-to-chunk vm region.
+	-- we therefore need to calculate which xyz offsets inside the region to touch.
+	local minpt, maxpt = vector.sort(pos1, pos2)
+	local minoffset = vector.subtract(minpt, minpa)
+	local maxoffset = vector.subtract(maxpt, maxpa)	-- will end up negative
+	local xrmin = minoffset.x
+	local yrmin = minoffset.y
+	local zrmin = minoffset.z
+	local xrmax = xa + maxoffset.x
+	local yrmax = ya + maxoffset.y
+	local zrmax = za + maxoffset.z
+
+	local data = vm:get_data()
+	local param2 = vm:get_param2_data()
+	local index = 1
+	local volume = 0
+	-- sorry about the formatting... too many indents otherwise
+	for z = 0, za, 1 do
+	for y = 0, ya, 1 do
+	for x = 0, xa, 1 do
+		if inrange(xrmin, x, xrmax) and inrange(yrmin, y, yrmax) and inrange(zrmin, z, zrmax) then
+			data[index] = cid
+			param2[index] = param2v
+			volume = volume + 1
+		end
+		index = index + 1
+	end
+	end
+	end
+
+	vm:set_data(data)
+	vm:set_param2_data(param2)
+	vm:write_to_map(true)	-- update light also
+
+	return minpt, maxpt, volume
+end
+i.fill_area_exact = fill_area_exact
+
+
+
 -- lint note: intentional global assignment
 testhelpers = i
